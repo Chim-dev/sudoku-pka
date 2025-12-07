@@ -1,0 +1,4 @@
+solver,puzzle_id,success,time_ms,recursion_steps,peak_memory_kb
+dfs,0,0,120012.399,369214,9.6
+csp,0,0,120019.219,228631,643.6
+dlx,0,1,3578.482,6209,10929.0
