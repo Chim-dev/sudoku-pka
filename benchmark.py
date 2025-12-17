@@ -100,4 +100,6 @@ def benchmark(txt_path: str, csv_out: str, n: int, timeout_sec: float = 30.0):
 
 
 if __name__ == "__main__":
-    benchmark("puzzles_25x25.txt", "results_25x25.csv", n=25, timeout_sec=120.0)
+    benchmark("puzzles_25x25.txt", "results_25x25_120.csv", n=25, timeout_sec=120.0)
+    benchmark("puzzles_25x25.txt", "results_25x25_300.csv", n=25, timeout_sec=300.0)
+

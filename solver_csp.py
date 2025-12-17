@@ -1,169 +1,240 @@
-# solver_csp.py
-from typing import Dict, Tuple, Set, List, Optional, Callable
-from sudoku_core import EMPTY, block_size
-from metrics import Metrics
+from __future__ import annotations
+
+from typing import Dict, Tuple, Set, List, Optional, Callable, Deque
+from collections import deque
 import time
 
-Coord = Tuple[int, int]
+from sudoku_core import EMPTY, block_size
+from metrics import Metrics
+
+Cell = Tuple[int, int]              # (row, col)
+DomainMap = Dict[Cell, Set[int]]
+NeighborMap = Dict[Cell, Set[Cell]]
+Arc = Tuple[Cell, Cell]             # (Xi, Xj)
+PruneLog = List[Tuple[Cell, int]]   # daftar (cell, value) yang dihapus dari domain
+
 StepCallback = Optional[Callable[[List[List[int]]], None]]
 
-def init_domains(board: List[List[int]]) -> Dict[Coord, Set[int]]:
-    """
-    Inisialisasi domain untuk tiap sel:
-    - Jika kosong: {1..N}
-    - Jika sudah terisi: {nilai itu}
-    Lalu lakukan constraint propagation sederhana (hapus nilai yang sudah fix dari tetangga).
-    """
+
+def build_neighbor_map(size: int) -> NeighborMap:
+    """Membangun graph constraint Sudoku: tiap cell terhubung ke row/col/block neighbors."""
+    b = block_size(size)
+    neighbors: NeighborMap = {(r, c): set() for r in range(size) for c in range(size)}
+
+    for r in range(size):
+        for c in range(size):
+            # row neighbors
+            for cc in range(size):
+                if cc != c:
+                    neighbors[(r, c)].add((r, cc))
+
+            # col neighbors
+            for rr in range(size):
+                if rr != r:
+                    neighbors[(r, c)].add((rr, c))
+
+            # block neighbors
+            br = (r // b) * b
+            bc = (c // b) * b
+            for rr in range(br, br + b):
+                for cc in range(bc, bc + b):
+                    if (rr, cc) != (r, c):
+                        neighbors[(r, c)].add((rr, cc))
+
+    return neighbors
+
+
+def init_domains(board: List[List[int]]) -> DomainMap:
+    """Domain awal: cell kosong -> {1..N}, cell terisi -> {nilai itu}."""
     n = len(board)
-    b = block_size(n)
     all_vals = set(range(1, n + 1))
-    domains: Dict[Coord, Set[int]] = {}
+    domains: DomainMap = {}
 
     for r in range(n):
         for c in range(n):
-            if board[r][c] == EMPTY:
-                domains[(r, c)] = set(all_vals)
-            else:
-                domains[(r, c)] = {board[r][c]}
+            domains[(r, c)] = {board[r][c]} if board[r][c] != EMPTY else set(all_vals)
 
-    def neighbors(r: int, c: int):
-        # baris
-        for j in range(n):
-            if j != c:
-                yield (r, j)
-        # kolom
-        for i in range(n):
-            if i != r:
-                yield (i, c)
-        # blok
-        br = (r // b) * b
-        bc = (c // b) * b
-        for i in range(br, br + b):
-            for j in range(bc, bc + b):
-                if i != r or j != c:
-                    yield (i, j)
-
-    # propagasi awal
-    changed = True
-    while changed:
-        changed = False
-        for (r, c), dom in domains.items():
-            if len(dom) == 1:
-                val = next(iter(dom))
-                for (nr, nc) in neighbors(r, c):
-                    if val in domains[(nr, nc)] and len(domains[(nr, nc)]) > 1:
-                        domains[(nr, nc)].remove(val)
-                        changed = True
     return domains
 
-def select_unassigned_variable(domains: Dict[Coord, Set[int]],
-                               board: List[List[int]]) -> Optional[Coord]:
-    """
-    Heuristik MRV: pilih sel kosong dengan domain terkecil (>0).
-    Kalau ada domain size 0 -> dead-end.
-    """
-    mrv_cell = None
-    mrv_size = 10**9
-    for (r, c), dom in domains.items():
-        if board[r][c] == EMPTY:
-            size = len(dom)
-            if size == 0:
-                return (r, c)  # dead-end
-            if size < mrv_size:
-                mrv_size = size
-                mrv_cell = (r, c)
-    return mrv_cell
 
-def get_neighbors(n: int, b: int, r: int, c: int) -> List[Coord]:
-    res = []
-    # baris
-    for j in range(n):
-        if j != c:
-            res.append((r, j))
-    # kolom
-    for i in range(n):
-        if i != r:
-            res.append((i, c))
-    # blok
-    br = (r // b) * b
-    bc = (c // b) * b
-    for i in range(br, br + b):
-        for j in range(bc, bc + b):
-            if i != r or j != c:
-                res.append((i, j))
-    return res
+def is_assigned(board: List[List[int]], cell: Cell) -> bool:
+    r, c = cell
+    return board[r][c] != EMPTY
 
-def backtrack_csp(board: List[List[int]],
-                  domains: Dict[Coord, Set[int]],
+
+def select_unassigned_mrv_degree(domains: DomainMap,
+                                 board: List[List[int]],
+                                 neighbors: NeighborMap) -> Optional[Cell]:
+    """
+    MRV: pilih cell unassigned dengan domain terkecil.
+    Tie-break: degree heuristic (lebih banyak tetangga unassigned).
+    """
+    best_cell: Optional[Cell] = None
+    best_domain_size = 10**9
+    best_degree = -1
+
+    for cell, dom in domains.items():
+        if is_assigned(board, cell):
+            continue
+
+        dsize = len(dom)
+        if dsize == 0:
+            return cell  # dead-end cepat
+
+        degree = sum(1 for nb in neighbors[cell] if not is_assigned(board, nb))
+        if dsize < best_domain_size or (dsize == best_domain_size and degree > best_degree):
+            best_cell = cell
+            best_domain_size = dsize
+            best_degree = degree
+
+    return best_cell
+
+
+def order_values_lcv(cell: Cell,
+                     domains: DomainMap,
+                     board: List[List[int]],
+                     neighbors: NeighborMap) -> List[int]:
+    """
+    LCV: urutkan nilai yang menghapus paling sedikit kandidat di tetangga.
+    """
+    scores: List[Tuple[int, int]] = []
+    for value in domains[cell]:
+        eliminated = 0
+        for nb in neighbors[cell]:
+            if is_assigned(board, nb):
+                continue
+            if value in domains[nb]:
+                eliminated += 1
+        scores.append((eliminated, value))
+
+    scores.sort()
+    return [v for _, v in scores]
+
+
+def revise_neq(domains: DomainMap, xi: Cell, xj: Cell, pruned: PruneLog) -> bool:
+    """
+    Constraint antar neighbor Sudoku: Xi != Xj.
+    Untuk constraint !=: hanya perlu prune jika domain(Xj) singleton {v},
+    maka v dihapus dari domain(Xi).
+    """
+    if len(domains[xj]) != 1:
+        return False
+
+    forced_val = next(iter(domains[xj]))
+    if forced_val in domains[xi]:
+        domains[xi].remove(forced_val)
+        pruned.append((xi, forced_val))
+        return True
+
+    return False
+
+
+def ac3(domains: DomainMap, queue: Deque[Arc], neighbors: NeighborMap) -> Tuple[bool, PruneLog]:
+    """
+    AC-3: proses queue arc (Xi, Xj); jika domain Xi berubah, push (Xk, Xi) untuk semua neighbor Xk != Xj.
+    """
+    pruned: PruneLog = []
+
+    while queue:
+        xi, xj = queue.popleft()
+
+        if revise_neq(domains, xi, xj, pruned):
+            if len(domains[xi]) == 0:
+                return False, pruned
+
+            for xk in neighbors[xi]:
+                if xk != xj:
+                    queue.append((xk, xi))
+
+    return True, pruned
+
+
+def assign_cell(board: List[List[int]], domains: DomainMap, cell: Cell, value: int) -> PruneLog:
+    """
+    Assign cell=value dan prune domain(cell) menjadi singleton {value}.
+    Return log pruning untuk undo.
+    """
+    r, c = cell
+    board[r][c] = value
+
+    removed: PruneLog = []
+    current_dom = domains[cell]
+    for v in list(current_dom):
+        if v != value:
+            current_dom.remove(v)
+            removed.append((cell, v))
+
+    return removed
+
+
+def undo(board: List[List[int]], domains: DomainMap, cell: Cell, prev_board_val: int, pruned: PruneLog) -> None:
+    r, c = cell
+    board[r][c] = prev_board_val
+    for (pruned_cell, val) in pruned:
+        domains[pruned_cell].add(val)
+
+
+def backtrack_mac(board: List[List[int]],
+                  domains: DomainMap,
+                  neighbors: NeighborMap,
                   metrics: Metrics,
                   timeout_sec: float,
                   start_time: float,
                   step_callback: StepCallback = None) -> bool:
-    """
-    Backtracking dengan:
-    - MRV untuk pemilihan variabel
-    - forward checking untuk pruning domain tetangga
-    - optional step_callback untuk visualisasi
-
-    recursion_steps dihitung per node search:
-    setiap kali fungsi ini dipanggil (dan belum timeout) -> +1.
-    """
     if time.perf_counter() - start_time > timeout_sec:
         return False
 
-    # Satu node baru di pohon pencarian
-    metrics.recursion_steps += 1
+    metrics.recursion_steps += 1  # cost per node search
 
-    var = select_unassigned_variable(domains, board)
-    if var is None:
-        # semua terisi
+    cell = select_unassigned_mrv_degree(domains, board, neighbors)
+    if cell is None:
         if step_callback is not None:
             step_callback(board)
         return True
 
-    r, c = var
-    if board[r][c] != EMPTY:
-        return backtrack_csp(board, domains, metrics, timeout_sec, start_time, step_callback)
+    if len(domains[cell]) == 0:
+        return False
 
-    n = len(board)
-    b = block_size(n)
+    r, c = cell
+    prev_val = board[r][c]
 
-    for val in sorted(domains[(r, c)]):
-        old_board_val = board[r][c]
-        board[r][c] = val
+    for value in order_values_lcv(cell, domains, board, neighbors):
+        pruned_total: PruneLog = []
+
+        # assign
+        pruned_total += assign_cell(board, domains, cell, value)
         if step_callback is not None:
             step_callback(board)
 
-        removed: Dict[Coord, Set[int]] = {}
-        ok = True
-        # forward checking: hapus 'val' dari domain tetangga
-        for (nr, nc) in get_neighbors(n, b, r, c):
-            d = domains[(nr, nc)]
-            if val in d:
-                if len(d) == 1:
-                    ok = False
-                    break
-                removed.setdefault((nr, nc), set()).add(val)
-        if ok:
-            for (nr, nc), vals in removed.items():
-                domains[(nr, nc)] -= vals
-            if backtrack_csp(board, domains, metrics, timeout_sec, start_time, step_callback):
-                return True
-            # undo domain
-            for (nr, nc), vals in removed.items():
-                domains[(nr, nc)] |= vals
+        # MAC: jalankan AC-3 hanya untuk arc (neighbor -> cell)
+        q = deque((nb, cell) for nb in neighbors[cell] if not is_assigned(board, nb))
+        ok, pruned_ac3 = ac3(domains, q, neighbors)
+        pruned_total += pruned_ac3
 
-        # undo assignment di board
-        board[r][c] = old_board_val
+        if ok and backtrack_mac(board, domains, neighbors, metrics, timeout_sec, start_time, step_callback):
+            return True
+
+        # undo
+        undo(board, domains, cell, prev_val, pruned_total)
         if step_callback is not None:
             step_callback(board)
 
     return False
+
 
 def solve_csp(board: List[List[int]],
               metrics: Metrics,
               timeout_sec: float,
               start_time: float,
               step_callback: StepCallback = None) -> bool:
+    n = len(board)
+    neighbors = build_neighbor_map(n)
     domains = init_domains(board)
-    return backtrack_csp(board, domains, metrics, timeout_sec, start_time, step_callback)
+
+    # AC-3 global sekali di awal (pruning awal)
+    all_arcs = deque((xi, xj) for xi in neighbors for xj in neighbors[xi])
+    ok, _ = ac3(domains, all_arcs, neighbors)
+    if not ok:
+        return False
+
+    return backtrack_mac(board, domains, neighbors, metrics, timeout_sec, start_time, step_callback)

@@ -1,11 +1,11 @@
 import signal
-signal.signal(signal.SIGINT, signal.SIG_DFL)  
+signal.signal(signal.SIGINT, signal.SIG_DFL)  # bantu Ctrl+C di sebagian backend [web:279]
 
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def plot_results(csv_path="results_25x25.csv"):
+def plot_results(csv_path: str, tag: str = ""):
     try:
         df = pd.read_csv(csv_path)
 
@@ -42,62 +42,63 @@ def plot_results(csv_path="results_25x25.csv"):
         grouped["solver"] = pd.Categorical(grouped["solver"], categories=order, ordered=True)
         grouped = grouped.sort_values("solver")
 
+        print(f"\n=== {csv_path} {tag} ===")
         print(grouped)
 
-        # ---- Plot 1: Waktu ----
+        suffix = f" ({tag})" if tag else ""
+
+        # Buat semua figure dulu
         plt.figure(figsize=(6, 4))
         plt.bar(grouped["solver"], grouped["avg_time_ms"])
         plt.ylabel("Rata-rata waktu (ms)")
-        plt.title("Rata-rata waktu eksekusi per solver")
+        plt.title("Rata-rata waktu eksekusi per solver" + suffix)
         plt.tight_layout()
 
-        # ---- Plot 2: Node pencarian ----
         plt.figure(figsize=(6, 4))
         plt.bar(grouped["solver"], grouped["avg_recursion"])
         plt.ylabel("Rata-rata node pencarian")
-        plt.title("Rata-rata node pencarian (recursion_steps)")
+        plt.title("Rata-rata node pencarian (recursion_steps)" + suffix)
         plt.tight_layout()
 
-        # ---- Plot 3a: Python peak (tracemalloc) ----
         if "avg_py_peak_kb" in grouped.columns:
             plt.figure(figsize=(6, 4))
             plt.bar(grouped["solver"], grouped["avg_py_peak_kb"])
             plt.ylabel("Rata-rata Python peak (KB)")
-            plt.title("Rata-rata Python peak memory (tracemalloc)")
+            plt.title("Rata-rata Python peak memory (tracemalloc)" + suffix)
             plt.tight_layout()
 
-        # ---- Plot 3b: RSS (OS memory) ----
         if "avg_rss_kb" in grouped.columns:
             plt.figure(figsize=(6, 4))
             plt.bar(grouped["solver"], grouped["avg_rss_kb"])
             plt.ylabel("Rata-rata RSS (KB)")
-            plt.title("Rata-rata RSS memory (OS)")
+            plt.title("Rata-rata RSS memory (OS)" + suffix)
             plt.tight_layout()
 
-        # ---- Plot 3c: CSV lama ----
         if "avg_peak_memory_kb" in grouped.columns:
             plt.figure(figsize=(6, 4))
             plt.bar(grouped["solver"], grouped["avg_peak_memory_kb"])
             plt.ylabel("Rata-rata peak_memory_kb (KB)")
-            plt.title("Rata-rata peak_memory_kb (CSV lama)")
+            plt.title("Rata-rata peak_memory_kb (CSV lama)" + suffix)
             plt.tight_layout()
 
-        # ---- Plot 4: Success rate ----
         plt.figure(figsize=(6, 4))
         plt.bar(grouped["solver"], grouped["success_rate"] * 100)
         plt.ylabel("Success rate (%)")
-        plt.title("Persentase puzzle yang berhasil diselesaikan")
+        plt.title("Persentase puzzle yang berhasil diselesaikan" + suffix)
         plt.ylim(0, 100)
         plt.tight_layout()
 
-        # show cukup SEKALI (blocking), tutup window untuk lanjut/selesai [web:277]
+        # show sekali (blocking). Tutup window untuk lanjut ke run berikutnya. [web:277]
         plt.show()
 
+        # setelah window ditutup, bersihkan figure agar run berikutnya tidak numpuk
+        plt.close("all")  # [web:280][web:289]
+
     except KeyboardInterrupt:
-        # Kalau Ctrl+C, tutup semua figure dan keluar bersih [web:280][web:289]
-        plt.close("all")
+        plt.close("all")  # tutup semua window saat Ctrl+C [web:280][web:289]
         raise
 
 
 if __name__ == "__main__":
-    plot_results()
+    plot_results("results_25x25_120.csv", tag="timeout=120s")
+    plot_results("results_25x25_300.csv", tag="timeout=300s")

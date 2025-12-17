@@ -1,0 +1,4 @@
+solver,puzzle_id,success,time_ms,recursion_steps,py_peak_kb,rss_kb
+dfs,0,0,120026.145,325049,4.8,19220.0
+csp,0,0,120141.728,6735,29071.6,23964.0
+dlx,0,1,4140.816,6209,10934.8,25760.0
