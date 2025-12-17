@@ -1,4 +1,4 @@
-solver,puzzle_id,success,time_ms,recursion_steps,peak_memory_kb
-dfs,0,0,120012.399,369214,9.6
-csp,0,0,120019.219,228631,643.6
-dlx,0,1,3578.482,6209,10929.0
+solver,puzzle_id,success,time_ms,recursion_steps,py_peak_kb,rss_kb
+dfs,0,0,120010.029,482638,9.9,18644.0
+csp,0,0,120009.145,316882,641.2,19436.0
+dlx,0,1,4538.136,6209,10929.2,23060.0
