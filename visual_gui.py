@@ -1,4 +1,3 @@
-# visual_gui.py
 import time
 import argparse
 import tkinter as tk
@@ -10,7 +9,7 @@ from solver_dlx import solve_dlx
 from metrics import Metrics
 
 def load_first_puzzle(path: str):
-    # ambil puzzle pertama dari file (9x9 atau 25x25)
+    # ambil puzzle 
     with open(path) as f:
         lines = [line.rstrip("\n") for line in f if line.strip()]
     n = len(lines[0])
@@ -148,7 +147,6 @@ def main():
         print("Tidak ada snapshot yang terkumpul.")
         return
 
-    # Untuk 9x9, cell_size=40 OK; untuk 25x25 bisa dikurangi, misal 20
     cell_size = 40 if len(snapshots[0]) <= 9 else 20
     gui = SudokuGUI(
         snapshots,

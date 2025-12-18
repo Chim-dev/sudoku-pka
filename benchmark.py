@@ -21,7 +21,6 @@ SOLVERS = {
 def load_puzzles_from_file(path: str, n: int) -> list:
     """
     Membaca puzzle dari txt.
-    - Untuk 9x9: tiap baris panjang 9 char (0 untuk kosong), 9 baris per puzzle.
     - Untuk 25x25: tiap baris berisi 25 angka dipisah spasi, 25 baris per puzzle.
     """
     with open(path) as f:
@@ -47,7 +46,7 @@ def run_with_metrics_rss(solver_func, board, timeout_sec: float) -> Metrics:
     metrics = Metrics()
 
     proc = psutil.Process()
-    rss_before = proc.memory_info().rss  # bytes [web:225][web:224]
+    rss_before = proc.memory_info().rss  
 
     tracemalloc.start()
     start_time = time.perf_counter()
@@ -64,7 +63,7 @@ def run_with_metrics_rss(solver_func, board, timeout_sec: float) -> Metrics:
     metrics.time_ms = (end_time - start_time) * 1000.0
     metrics.success = success
 
-    # tambahkan atribut ini kalau Metrics kamu belum punya, atau tulis langsung ke CSV
+
     metrics.py_peak_kb = py_peak / 1024.0
     metrics.rss_kb = rss_est_peak / 1024.0
     return metrics
@@ -81,7 +80,7 @@ def benchmark(txt_path: str, csv_out: str, n: int, timeout_sec: float = 30.0):
 
     with open(csv_out, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()  # header CSV [web:85][web:246]
+        writer.writeheader()  
 
         for pid, puzzle in enumerate(puzzles):
             for solver_name, solver_func in SOLVERS.items():
